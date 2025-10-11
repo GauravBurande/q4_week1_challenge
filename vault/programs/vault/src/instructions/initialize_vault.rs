@@ -10,7 +10,7 @@ use crate::Config;
 pub struct Initialize<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
-    #[account(init, payer = admin, space = 8 + Config::INIT_SPACE, seeds = [b"vault"], bump)]
+    #[account(init, payer = admin, space = 8 + Config::INIT_SPACE, seeds = [b"config"], bump)]
     pub config: Account<'info, Config>,
 
     #[account(

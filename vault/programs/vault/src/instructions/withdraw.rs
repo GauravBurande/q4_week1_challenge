@@ -8,16 +8,15 @@ use anchor_spl::{
 use crate::{Amount, Config};
 
 #[derive(Accounts)]
-pub struct Deposit<'info> {
+pub struct Withdraw<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
     #[account(
-        init_if_needed,
-        payer=user,
+        mut,
+        close=user,
         seeds=[b"amount", user.key().as_ref()],
-        bump,
-        space = 8 + Amount::INIT_SPACE
+        bump=amount_pda.bump,
     )]
     pub amount_pda: Account<'info, Amount>,
 
@@ -45,22 +44,21 @@ pub struct Deposit<'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl Deposit<'_> {
-    pub fn deposit(&mut self, amount: u64, bumps: &DepositBumps) -> Result<()> {
-        self.amount_pda.set_inner(Amount {
-            amount: self.amount_pda.amount + amount,
-            bump: bumps.amount_pda,
-        });
+impl Withdraw<'_> {
+    pub fn withdraw(&mut self, amount: u64) -> Result<()> {
         let cpi_program = self.token_program.to_account_info();
 
         let cpi_accounts = TransferChecked {
-            from: self.user_ata.to_account_info(),
-            to: self.vault.to_account_info(),
+            from: self.vault.to_account_info(),
+            to: self.user_ata.to_account_info(),
             mint: self.mint.to_account_info(),
             authority: self.user.to_account_info(),
         };
 
-        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        let seeds: &[&[u8]] = &[b"vault", &[self.config.bump]];
+        let singer_seeds = &[seeds];
+
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, singer_seeds);
 
         transfer_checked(cpi_ctx, amount, self.mint.decimals)?;
         Ok(())
