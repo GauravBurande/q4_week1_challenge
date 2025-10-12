@@ -14,9 +14,15 @@ cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
-idl-build = ["anchor-lang/idl-build"]
-
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
-anchor-lang = "0.31.1"
+anchor-lang = { version = "0.31.1", features = ["interface-instructions", "init-if-needed"] }
+anchor-spl = "0.31.1"
+# Library for easy management of 8-byte discriminators
+spl-discriminator = "0.4"
+# Library defining a generic state interface to encode additional required accounts for an instruction, using Type-Length-Value structures
+spl-tlv-account-resolution = "0.10.0"
+# Library with helper to resolve additional accounts
+spl-transfer-hook-interface = "0.10.0"
 
