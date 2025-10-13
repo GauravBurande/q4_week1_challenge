@@ -1,10 +1,9 @@
 #[cfg(test)]
 mod tests {
 
-    use anchor_lang::{prelude::msg, InstructionData, ToAccountMetas};
+    use anchor_lang::{prelude::msg, solana_program::hash::Hash, InstructionData, ToAccountMetas};
     use anchor_spl::associated_token::{self, spl_associated_token_account};
     use litesvm::LiteSVM;
-    use litesvm_token::spl_token::ID as TOKEN_PROGRAM;
     use solana_instruction::Instruction;
     use solana_keypair::Keypair;
     use solana_message::Message;
@@ -13,28 +12,67 @@ mod tests {
     use solana_sdk_ids::system_program::ID as SYSTEM_PROGRAM;
     use solana_signer::Signer;
     use solana_transaction::Transaction;
+    use spl_token_2022::{extension::StateWithExtensions, state::Account};
     use std::{fs::read, path::PathBuf, str::FromStr};
     pub struct TestEnv {
         pub svm: LiteSVM,
         pub admin: Keypair,
         pub mint2022: Keypair,
+        pub token_program: Pubkey,
         pub config: Pubkey,
         pub vault: Pubkey,
+        pub user_ata: Pubkey,
     }
     static PROGRAM_ID: Pubkey = crate::ID;
 
     const ASSOCIATED_TOKEN_PROGRAM: Pubkey = spl_associated_token_account::ID;
 
+    fn get_tf_hook_program_address() -> Pubkey {
+        let transfer_hook_program =
+            Pubkey::from_str("E6mxgYTtMfqneSJHxBZ9sP7VdJjW9FQsz1Dff8TsSN9p").unwrap();
+        transfer_hook_program
+    }
+
     fn setup() -> TestEnv {
         let mut svm = LiteSVM::new();
         let admin = Keypair::new();
         let mint2022 = Keypair::new();
+        let token_program =
+            Pubkey::from_str("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap();
+
+        // let rpc_client = RpcClient::new("https://api.devnet.solana.com");
+        // let token_address =
+        //     Address::from_str("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap();
+        // let fetched_account = rpc_client
+        //     .get_account(&token_address)
+        //     .expect("Failed to fetch account from devnet");
+
+        // svm.set_account(
+        //     token_program,
+        //     Account {
+        //         lamports: fetched_account.lamports,
+        //         data: fetched_account.data,
+        //         owner: Pubkey::from(fetched_account.owner.to_bytes()),
+        //         executable: fetched_account.executable,
+        //         rent_epoch: fetched_account.rent_epoch,
+        //     },
+        // )
+        // .unwrap();
 
         let vault_so_path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/deploy/vault.so");
         let vault_program_data = read(vault_so_path).expect("Failed to read the program SO file!");
 
+        let whitelist_tf_hook_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/deploy/whitelist_transfer_hook.so");
+        let whitelist_tf_hook_program_data =
+            read(whitelist_tf_hook_path).expect("Failed to read the program SO file!");
+
         svm.add_program(PROGRAM_ID, &vault_program_data);
+        svm.add_program(
+            get_tf_hook_program_address(),
+            &whitelist_tf_hook_program_data,
+        );
 
         svm.airdrop(&admin.pubkey(), 10 * LAMPORTS_PER_SOL)
             .expect("Failed to airdrop SOL to admin.");
@@ -49,26 +87,34 @@ mod tests {
         let vault = associated_token::get_associated_token_address_with_program_id(
             &config,
             &mint2022.pubkey(),
-            &TOKEN_PROGRAM,
+            &token_program,
+        );
+        let user_ata = associated_token::get_associated_token_address_with_program_id(
+            &admin.pubkey(),
+            &mint2022.pubkey(),
+            &token_program,
         );
 
         TestEnv {
             svm,
             admin,
             mint2022,
+            token_program,
             config,
             vault,
+            user_ata,
         }
     }
 
-    fn build_init_instruction(
+    fn build_init_transaction(
         admin: &Keypair,
         mint2022: &Keypair,
+        token_program: Pubkey,
         config: Pubkey,
         vault: Pubkey,
-    ) -> Instruction {
-        let transfer_hook_program =
-            Pubkey::from_str("E6mxgYTtMfqneSJHxBZ9sP7VdJjW9FQsz1Dff8TsSN9p").unwrap(); // this one is correct
+        recent_blockhash: Hash,
+    ) -> Transaction {
+        // this one is correct
         let init_ix = Instruction {
             program_id: PROGRAM_ID,
             accounts: crate::accounts::Initialize {
@@ -76,16 +122,46 @@ mod tests {
                 config: config,
                 vault: vault,
                 mint: mint2022.pubkey(),
-                transfer_hook_program,
+                transfer_hook_program: get_tf_hook_program_address(),
                 associated_token_program: ASSOCIATED_TOKEN_PROGRAM,
                 system_program: SYSTEM_PROGRAM,
-                token_program: TOKEN_PROGRAM,
+                token_program,
             }
             .to_account_metas(Some(true)),
             data: crate::instruction::InitializeVault {}.data(),
         };
 
-        init_ix
+        let message = Message::new(&[init_ix], Some(&admin.pubkey()));
+
+        Transaction::new(&[&admin, &mint2022], message, recent_blockhash)
+    }
+
+    fn build_mint_transaction(
+        admin: &Keypair,
+        mint2022: &Keypair,
+        token_program: Pubkey,
+        user_ata: Pubkey,
+        amount: u64,
+        recent_blockhash: Hash,
+    ) -> Transaction {
+        let mint_ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: crate::accounts::MintToken {
+                admin: admin.pubkey(),
+                user: admin.pubkey(),
+                mint: mint2022.pubkey(),
+                user_ata,
+                associated_token_program: ASSOCIATED_TOKEN_PROGRAM,
+                token_program,
+                system_program: SYSTEM_PROGRAM,
+            }
+            .to_account_metas(Some(true)),
+            data: crate::instruction::Mint { amount }.data(),
+        };
+
+        let message = Message::new(&[mint_ix], Some(&admin.pubkey()));
+
+        Transaction::new(&[&admin], message, recent_blockhash)
     }
 
     #[test]
@@ -94,22 +170,93 @@ mod tests {
             mut svm,
             admin,
             mint2022,
+            token_program,
             config,
             vault,
+            user_ata: _,
         } = setup();
-        let init_ix = build_init_instruction(&admin, &mint2022, config, vault);
-        msg!("program id {}", PROGRAM_ID);
-
-        let message = Message::new(&[init_ix], Some(&admin.pubkey()));
         let recent_blockhash = svm.latest_blockhash();
-
-        let transaction = Transaction::new(&[&admin, &mint2022], message, recent_blockhash);
+        let transaction = build_init_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            config,
+            vault,
+            recent_blockhash,
+        );
 
         let tx = svm.send_transaction(transaction).unwrap();
 
         // Log transaction details
-        msg!("\n\nMake transaction sucessfull");
+        msg!("\n\nInit transaction sucessfull");
         msg!("CUs Consumed: {}", tx.compute_units_consumed);
         msg!("Tx Signature: {}", tx.signature);
+    }
+
+    #[test]
+    fn test_mint() {
+        let TestEnv {
+            mut svm,
+            admin,
+            mint2022,
+            token_program,
+            config,
+            vault,
+            user_ata,
+        } = setup();
+
+        let recent_blockhash = svm.latest_blockhash();
+        let transaction1 = build_init_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            config,
+            vault,
+            recent_blockhash,
+        );
+        let _tx1 = svm.send_transaction(transaction1).unwrap();
+
+        let amount = 1_000_000;
+
+        let transaction2 = build_mint_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            user_ata,
+            amount,
+            recent_blockhash,
+        );
+        let tx2 = svm
+            .send_transaction(transaction2)
+            .expect("Failed to send mint token transaction!");
+
+        // Log transaction details
+        msg!("\n\n Mint transaction sucessfull");
+        msg!("CUs Consumed: {}", tx2.compute_units_consumed);
+        msg!("Tx Signature: {}", tx2.signature);
+
+        let token_account = svm.get_account(&user_ata).unwrap();
+        let token_state = StateWithExtensions::<Account>::unpack(&token_account.data)
+            .expect("Failed to deserialize token account data");
+        msg!("token state: {:?}", token_state.base);
+        assert_eq!(token_state.base.amount, amount);
+    }
+
+    #[test]
+    fn test_init_extra_account_meta() {
+        let TestEnv {
+            mut svm,
+            admin,
+            mint2022,
+            token_program,
+            config,
+            vault,
+            user_ata,
+        } = setup();
+        let transfer_hook_program = get_tf_hook_program_address();
+        let extra_account_meta_list = Pubkey::find_program_address(
+            &[b"extra-account-metas", mint2022.pubkey().as_ref()],
+            &transfer_hook_program,
+        );
     }
 }

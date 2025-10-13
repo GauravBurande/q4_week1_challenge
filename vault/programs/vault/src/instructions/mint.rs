@@ -12,6 +12,7 @@ pub struct MintToken<'info> {
     pub user: SystemAccount<'info>,
 
     #[account(
+        mut,
         mint::decimals = 6,
         mint::token_program = token_program
     )]
