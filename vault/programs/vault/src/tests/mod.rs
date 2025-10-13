@@ -33,6 +33,7 @@ mod tests {
         pub user_ata: Pubkey,
     }
 
+    // TODO: ADD IT IN A SINGLE WORKSPACE, ALL THE PROGRAMS!
     static PROGRAM_ID: Pubkey = crate::ID;
 
     const ASSOCIATED_TOKEN_PROGRAM: Pubkey = spl_associated_token_account::ID;
@@ -49,25 +50,6 @@ mod tests {
         let mint2022 = Keypair::new();
         let token_program =
             Pubkey::from_str("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap();
-
-        // let rpc_client = RpcClient::new("https://api.devnet.solana.com");
-        // let token_address =
-        //     Address::from_str("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap();
-        // let fetched_account = rpc_client
-        //     .get_account(&token_address)
-        //     .expect("Failed to fetch account from devnet");
-
-        // svm.set_account(
-        //     token_program,
-        //     Account {
-        //         lamports: fetched_account.lamports,
-        //         data: fetched_account.data,
-        //         owner: Pubkey::from(fetched_account.owner.to_bytes()),
-        //         executable: fetched_account.executable,
-        //         rent_epoch: fetched_account.rent_epoch,
-        //     },
-        // )
-        // .unwrap();
 
         let vault_so_path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/deploy/vault.so");
@@ -86,12 +68,6 @@ mod tests {
 
         svm.airdrop(&admin.pubkey(), 10 * LAMPORTS_PER_SOL)
             .expect("Failed to airdrop SOL to admin.");
-
-        // let mint2022 = CreateMint::new(&mut svm, &admin)
-        // .authority(&admin.pubkey())
-        // .decimals(6)
-        // .send()
-        // .unwrap();
 
         let config = Pubkey::find_program_address(&[b"config"], &PROGRAM_ID).0;
         let vault = associated_token::get_associated_token_address_with_program_id(
@@ -563,7 +539,7 @@ mod tests {
             .expect("Failed to send Deposit txn");
 
         // Log transaction details
-        msg!("\n\n Remove from whitelist transaction successful");
+        msg!("\n\n Desposit transaction successful");
         msg!("CUs Consumed: {}", tx.compute_units_consumed);
         msg!("Tx Signature: {}", tx.signature);
     }
@@ -644,7 +620,7 @@ mod tests {
             .send_transaction(transaction)
             .expect("Failed to send withdraw txn");
         // Log transaction details
-        msg!("\n\n Remove from whitelist transaction successful");
+        msg!("\n\n Withdraw transaction successful");
         msg!("CUs Consumed: {}", tx.compute_units_consumed);
         msg!("Tx Signature: {}", tx.signature);
     }

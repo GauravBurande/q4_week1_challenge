@@ -5,7 +5,7 @@ use anchor_spl::{
     token_interface::{Mint, TokenAccount, TokenInterface},
 };
 
-use crate::{Amount, Config};
+use crate::{error::VaultError, Amount, Config};
 
 #[derive(Accounts)]
 pub struct Withdraw<'info> {
@@ -40,10 +40,6 @@ pub struct Withdraw<'info> {
     pub vault: InterfaceAccount<'info, TokenAccount>,
 
     /// CHECK: ExtraAccountMetalist Account
-    #[account(
-        seeds=[b"extra-account-metas", mint.key().as_ref()],
-        bump
-    )]
     pub extra_account_meta_list: UncheckedAccount<'info>,
 
     /// CHECK: this will be the program created for the whitelist tf hook
@@ -56,6 +52,15 @@ pub struct Withdraw<'info> {
 impl Withdraw<'_> {
     pub fn withdraw(&mut self, amount: u64) -> Result<()> {
         let cpi_program = self.token_program.to_account_info();
+
+        // todo: add a pda check for the amount
+
+        let user_deposited_amount = self.amount_pda.amount;
+
+        require!(
+            user_deposited_amount <= amount,
+            VaultError::AmountExceededUrDeposit
+        );
 
         let cpi_accounts = TransferChecked {
             from: self.vault.to_account_info(),

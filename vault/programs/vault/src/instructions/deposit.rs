@@ -47,10 +47,6 @@ pub struct Deposit<'info> {
     pub vault: InterfaceAccount<'info, TokenAccount>,
 
     /// CHECK: ExtraAccountMetalist Account
-    #[account(
-        seeds=[b"extra-account-metas", mint.key().as_ref()],
-        bump
-    )]
     pub extra_account_meta_list: UncheckedAccount<'info>,
 
     /// CHECK: this will be the program created for the whitelist tf hook
