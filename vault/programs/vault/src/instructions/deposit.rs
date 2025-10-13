@@ -33,13 +33,28 @@ pub struct Deposit<'info> {
     #[account(
         mut,
         associated_token::mint=mint,
-        associated_token::authority=user
+        associated_token::authority=user,
+        associated_token::token_program=token_program
     )]
     pub user_ata: InterfaceAccount<'info, TokenAccount>,
 
-    #[account(associated_token::mint = mint, associated_token::authority = config)]
+    #[account(
+        mut,
+        associated_token::mint = mint,
+        associated_token::authority = config,
+        associated_token::token_program=token_program
+    )]
     pub vault: InterfaceAccount<'info, TokenAccount>,
 
+    /// CHECK: ExtraAccountMetalist Account
+    #[account(
+        seeds=[b"extra-account-metas", mint.key().as_ref()],
+        bump
+    )]
+    pub extra_account_meta_list: UncheckedAccount<'info>,
+
+    /// CHECK: this will be the program created for the whitelist tf hook
+    pub transfer_hook_program: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,

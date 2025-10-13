@@ -3,10 +3,15 @@ mod tests {
 
     use anchor_lang::{
         prelude::msg,
-        solana_program::hash::{hash, Hash},
+        solana_program::{
+            example_mocks::solana_sdk::transaction,
+            hash::{hash, Hash},
+        },
         InstructionData, ToAccountMetas,
     };
-    use anchor_spl::associated_token::{self, spl_associated_token_account};
+    use anchor_spl::associated_token::{
+        self, get_associated_token_address, spl_associated_token_account,
+    };
     use litesvm::LiteSVM;
     use solana_instruction::{AccountMeta, Instruction};
     use solana_keypair::Keypair;
@@ -169,18 +174,25 @@ mod tests {
         Transaction::new(&[&admin], message, recent_blockhash)
     }
 
+    fn get_extra_account_metalist_pubkey(
+        mint2022: &Keypair,
+        transfer_hook_program: Pubkey,
+    ) -> Pubkey {
+        let (extra_account_meta_list, _) = Pubkey::find_program_address(
+            &[b"extra-account-metas", mint2022.pubkey().as_ref()],
+            &transfer_hook_program,
+        );
+        extra_account_meta_list
+    }
     fn build_init_tf_transaction(
         admin: &Keypair,
         mint2022: &Keypair,
         recent_blockhash: Hash,
     ) -> Transaction {
         let transfer_hook_program = get_tf_hook_program_address();
-        let extra_account_meta_list = Pubkey::find_program_address(
-            &[b"extra-account-metas", mint2022.pubkey().as_ref()],
-            &transfer_hook_program,
-        )
-        .0;
 
+        let extra_account_meta_list =
+            get_extra_account_metalist_pubkey(&mint2022, transfer_hook_program);
         let account_metas = vec![
             AccountMeta::new(admin.pubkey(), true),
             AccountMeta::new(extra_account_meta_list, false),
@@ -238,6 +250,83 @@ mod tests {
         };
 
         let message = Message::new(&[instruction], Some(&admin.pubkey()));
+
+        Transaction::new(&[&admin], message, recent_blockhash)
+    }
+
+    fn build_deposit_transaction(
+        admin: &Keypair,
+        mint2022: &Keypair,
+        token_program: Pubkey,
+        config: Pubkey,
+        vault: Pubkey,
+        user_ata: Pubkey,
+        recent_blockhash: Hash,
+    ) -> Transaction {
+        let amount_pda =
+            Pubkey::find_program_address(&[b"amount", admin.pubkey().as_ref()], &PROGRAM_ID).0;
+        let transfer_hook_program = get_tf_hook_program_address();
+        let extra_account_meta_list =
+            get_extra_account_metalist_pubkey(&mint2022, transfer_hook_program);
+        // this one is correct
+        let deposit_ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: crate::accounts::Deposit {
+                user: admin.pubkey(),
+                user_ata,
+                config: config,
+                amount_pda,
+                vault: vault,
+                mint: mint2022.pubkey(),
+                transfer_hook_program,
+                extra_account_meta_list,
+                associated_token_program: ASSOCIATED_TOKEN_PROGRAM,
+                token_program,
+                system_program: SYSTEM_PROGRAM,
+            }
+            .to_account_metas(Some(true)),
+            data: crate::instruction::Deposit { amount: 100 }.data(),
+        };
+
+        let message = Message::new(&[deposit_ix], Some(&admin.pubkey()));
+
+        Transaction::new(&[&admin], message, recent_blockhash)
+    }
+
+    fn build_withdraw_transaction(
+        admin: &Keypair,
+        mint2022: &Keypair,
+        token_program: Pubkey,
+        config: Pubkey,
+        vault: Pubkey,
+        user_ata: Pubkey,
+        recent_blockhash: Hash,
+    ) -> Transaction {
+        let amount_pda =
+            Pubkey::find_program_address(&[b"amount", admin.pubkey().as_ref()], &PROGRAM_ID).0;
+        let transfer_hook_program = get_tf_hook_program_address();
+        let extra_account_meta_list =
+            get_extra_account_metalist_pubkey(&mint2022, transfer_hook_program);
+        let withdraw_ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: crate::accounts::Withdraw {
+                user: admin.pubkey(),
+                user_ata,
+                config: config,
+                amount_pda,
+                vault: vault,
+                mint: mint2022.pubkey(),
+                transfer_hook_program,
+                extra_account_meta_list,
+                associated_token_program: ASSOCIATED_TOKEN_PROGRAM,
+                token_program,
+                system_program: SYSTEM_PROGRAM,
+            }
+            .to_account_metas(Some(true)),
+            data: crate::instruction::Withdraw { amount: 100 }.data(),
+        };
+
+        let message = Message::new(&[withdraw_ix], Some(&admin.pubkey()));
 
         Transaction::new(&[&admin], message, recent_blockhash)
     }
@@ -406,7 +495,156 @@ mod tests {
             .expect("Failed to send init tf hoook tx");
 
         // Log transaction details
-        msg!("\n\n Remove from whitelist transaction sucessfull");
+        msg!("\n\n Remove from whitelist transaction successful");
+        msg!("CUs Consumed: {}", tx.compute_units_consumed);
+        msg!("Tx Signature: {}", tx.signature);
+    }
+
+    #[test]
+    fn test_deposit() {
+        let TestEnv {
+            mut svm,
+            admin,
+            mint2022,
+            token_program,
+            config,
+            vault,
+            user_ata,
+        } = setup();
+
+        let recent_blockhash = svm.latest_blockhash();
+        let transaction1 = build_init_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            config,
+            vault,
+            recent_blockhash,
+        );
+        let _tx1 = svm
+            .send_transaction(transaction1)
+            .expect("Failed to send vault init tx");
+
+        let transaction2 = build_init_tf_transaction(&admin, &mint2022, recent_blockhash);
+        let _tx2 = svm
+            .send_transaction(transaction2)
+            .expect("Failed to send init tf hoook tx");
+
+        let amount = 1_000_000;
+        let transaction3 = build_mint_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            user_ata,
+            amount,
+            recent_blockhash,
+        );
+        let _tx3 = svm
+            .send_transaction(transaction3)
+            .expect("Failed to send mint txn");
+
+        let transaction4 =
+            build_whitelist_transaction(&admin, "add_to_whitelist", recent_blockhash);
+        let _tx4 = svm
+            .send_transaction(transaction4)
+            .expect("Failed to send whitelist it txn");
+
+        let transaction = build_deposit_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            config,
+            vault,
+            user_ata,
+            recent_blockhash,
+        );
+        let tx = svm
+            .send_transaction(transaction)
+            .expect("Failed to send Deposit txn");
+
+        // Log transaction details
+        msg!("\n\n Remove from whitelist transaction successful");
+        msg!("CUs Consumed: {}", tx.compute_units_consumed);
+        msg!("Tx Signature: {}", tx.signature);
+    }
+
+    #[test]
+    fn test_withdraw() {
+        let TestEnv {
+            mut svm,
+            admin,
+            mint2022,
+            token_program,
+            config,
+            vault,
+            user_ata,
+        } = setup();
+
+        let recent_blockhash = svm.latest_blockhash();
+        let transaction1 = build_init_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            config,
+            vault,
+            recent_blockhash,
+        );
+        let _tx1 = svm
+            .send_transaction(transaction1)
+            .expect("Failed to send vault init tx");
+
+        let transaction2 = build_init_tf_transaction(&admin, &mint2022, recent_blockhash);
+        let _tx2 = svm
+            .send_transaction(transaction2)
+            .expect("Failed to send init tf hoook tx");
+
+        let amount = 1_000_000;
+        let transaction3 = build_mint_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            user_ata,
+            amount,
+            recent_blockhash,
+        );
+        let _tx3 = svm
+            .send_transaction(transaction3)
+            .expect("Failed to send mint txn");
+
+        let transaction4 =
+            build_whitelist_transaction(&admin, "add_to_whitelist", recent_blockhash);
+        let _tx4 = svm
+            .send_transaction(transaction4)
+            .expect("Failed to send whitelist it txn");
+
+        let transaction5 = build_deposit_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            config,
+            vault,
+            user_ata,
+            recent_blockhash,
+        );
+        let _tx5 = svm
+            .send_transaction(transaction5)
+            .expect("Failed to send Deposit txn");
+
+        let transaction = build_withdraw_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            config,
+            vault,
+            user_ata,
+            recent_blockhash,
+        );
+
+        let tx = svm
+            .send_transaction(transaction)
+            .expect("Failed to send withdraw txn");
+        // Log transaction details
+        msg!("\n\n Remove from whitelist transaction successful");
         msg!("CUs Consumed: {}", tx.compute_units_consumed);
         msg!("Tx Signature: {}", tx.signature);
     }

@@ -39,6 +39,15 @@ pub struct Withdraw<'info> {
     #[account(associated_token::mint = mint, associated_token::authority = config)]
     pub vault: InterfaceAccount<'info, TokenAccount>,
 
+    /// CHECK: ExtraAccountMetalist Account
+    #[account(
+        seeds=[b"extra-account-metas", mint.key().as_ref()],
+        bump
+    )]
+    pub extra_account_meta_list: UncheckedAccount<'info>,
+
+    /// CHECK: this will be the program created for the whitelist tf hook
+    pub transfer_hook_program: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
