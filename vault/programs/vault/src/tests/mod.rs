@@ -4,7 +4,7 @@ mod tests {
     use anchor_lang::{prelude::msg, solana_program::hash::Hash, InstructionData, ToAccountMetas};
     use anchor_spl::associated_token::{self, spl_associated_token_account};
     use litesvm::LiteSVM;
-    use solana_instruction::Instruction;
+    use solana_instruction::{AccountMeta, Instruction};
     use solana_keypair::Keypair;
     use solana_message::Message;
     use solana_native_token::LAMPORTS_PER_SOL;
@@ -164,6 +164,42 @@ mod tests {
         Transaction::new(&[&admin], message, recent_blockhash)
     }
 
+    fn build_init_tf_transaction(
+        admin: &Keypair,
+        mint2022: &Keypair,
+        recent_blockhash: Hash,
+    ) -> Transaction {
+        let transfer_hook_program = get_tf_hook_program_address();
+        let extra_account_meta_list = Pubkey::find_program_address(
+            &[b"extra-account-metas", mint2022.pubkey().as_ref()],
+            &transfer_hook_program,
+        )
+        .0;
+
+        let account_metas = vec![
+            AccountMeta::new(admin.pubkey(), true),
+            AccountMeta::new(extra_account_meta_list, false),
+            AccountMeta::new(mint2022.pubkey(), false),
+            AccountMeta::new(SYSTEM_PROGRAM, false),
+        ];
+
+        let mut data = vec![];
+
+        let discriminator =
+            anchor_lang::solana_program::hash::hash(b"global:initialize_transfer_hook");
+        data.extend_from_slice(&discriminator.to_bytes()[..8]);
+
+        let instruction = Instruction {
+            program_id: transfer_hook_program,
+            accounts: account_metas,
+            data,
+        };
+
+        let message = Message::new(&[instruction], Some(&admin.pubkey()));
+
+        Transaction::new(&[&admin], message, recent_blockhash)
+    }
+
     #[test]
     fn test_init_vault() {
         let TestEnv {
@@ -243,7 +279,7 @@ mod tests {
     }
 
     #[test]
-    fn test_init_extra_account_meta() {
+    fn test_initialize_transfer_hook() {
         let TestEnv {
             mut svm,
             admin,
@@ -251,12 +287,30 @@ mod tests {
             token_program,
             config,
             vault,
-            user_ata,
+            user_ata: _,
         } = setup();
-        let transfer_hook_program = get_tf_hook_program_address();
-        let extra_account_meta_list = Pubkey::find_program_address(
-            &[b"extra-account-metas", mint2022.pubkey().as_ref()],
-            &transfer_hook_program,
+        let recent_blockhash = svm.latest_blockhash();
+        let transaction1 = build_init_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            config,
+            vault,
+            recent_blockhash,
         );
+        let _tx1 = svm
+            .send_transaction(transaction1)
+            .expect("Failed to send init vault tx");
+
+        let transaction2 = build_init_tf_transaction(&admin, &mint2022, recent_blockhash);
+
+        let tx2 = svm
+            .send_transaction(transaction2)
+            .expect("Failed to send init tf hoook tx");
+
+        // Log transaction details
+        msg!("\n\n Init tf hook transaction sucessfull");
+        msg!("CUs Consumed: {}", tx2.compute_units_consumed);
+        msg!("Tx Signature: {}", tx2.signature);
     }
 }
