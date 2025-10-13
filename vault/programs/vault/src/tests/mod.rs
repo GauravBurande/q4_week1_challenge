@@ -1,7 +1,11 @@
 #[cfg(test)]
 mod tests {
 
-    use anchor_lang::{prelude::msg, solana_program::hash::Hash, InstructionData, ToAccountMetas};
+    use anchor_lang::{
+        prelude::msg,
+        solana_program::hash::{hash, Hash},
+        InstructionData, ToAccountMetas,
+    };
     use anchor_spl::associated_token::{self, spl_associated_token_account};
     use litesvm::LiteSVM;
     use solana_instruction::{AccountMeta, Instruction};
@@ -23,6 +27,7 @@ mod tests {
         pub vault: Pubkey,
         pub user_ata: Pubkey,
     }
+
     static PROGRAM_ID: Pubkey = crate::ID;
 
     const ASSOCIATED_TOKEN_PROGRAM: Pubkey = spl_associated_token_account::ID;
@@ -200,6 +205,43 @@ mod tests {
         Transaction::new(&[&admin], message, recent_blockhash)
     }
 
+    fn build_whitelist_transaction(
+        admin: &Keypair,
+        operation: &str,
+        recent_blockhash: Hash,
+    ) -> Transaction {
+        let transfer_hook_program = get_tf_hook_program_address();
+
+        let whitelist = Pubkey::find_program_address(
+            &[b"whitelist", admin.pubkey().as_ref()],
+            &transfer_hook_program,
+        )
+        .0;
+
+        let account_metas = vec![
+            AccountMeta::new(admin.pubkey(), true),
+            AccountMeta::new(whitelist, false),
+            AccountMeta::new(SYSTEM_PROGRAM, false),
+        ];
+
+        let mut data = vec![];
+
+        let string = format!("global:{}", operation);
+        let discriminator = hash(string.as_bytes());
+        data.extend_from_slice(&discriminator.to_bytes()[..8]);
+        data.extend_from_slice(&admin.pubkey().as_ref());
+
+        let instruction = Instruction {
+            program_id: transfer_hook_program,
+            accounts: account_metas,
+            data,
+        };
+
+        let message = Message::new(&[instruction], Some(&admin.pubkey()));
+
+        Transaction::new(&[&admin], message, recent_blockhash)
+    }
+
     #[test]
     fn test_init_vault() {
         let TestEnv {
@@ -312,5 +354,60 @@ mod tests {
         msg!("\n\n Init tf hook transaction sucessfull");
         msg!("CUs Consumed: {}", tx2.compute_units_consumed);
         msg!("Tx Signature: {}", tx2.signature);
+    }
+
+    #[test]
+    fn test_add_to_whitelist() {
+        let TestEnv {
+            mut svm,
+            admin,
+            mint2022: _,
+            token_program: _,
+            config: _,
+            vault: _,
+            user_ata: _,
+        } = setup();
+        let recent_blockhash = svm.latest_blockhash();
+
+        let transaction = build_whitelist_transaction(&admin, "add_to_whitelist", recent_blockhash);
+        let tx = svm
+            .send_transaction(transaction)
+            .expect("Failed to send init tf hoook tx");
+
+        // Log transaction details
+        msg!("\n\n Add to whitelist transaction sucessfull");
+        msg!("CUs Consumed: {}", tx.compute_units_consumed);
+        msg!("Tx Signature: {}", tx.signature);
+    }
+
+    #[test]
+    fn test_remove_from_whitelist() {
+        let TestEnv {
+            mut svm,
+            admin,
+            mint2022: _,
+            token_program: _,
+            config: _,
+            vault: _,
+            user_ata: _,
+        } = setup();
+        let recent_blockhash = svm.latest_blockhash();
+
+        let transaction1 =
+            build_whitelist_transaction(&admin, "add_to_whitelist", recent_blockhash);
+        let _tx1 = svm
+            .send_transaction(transaction1)
+            .expect("Failed to send init tf hoook tx");
+
+        let transaction =
+            build_whitelist_transaction(&admin, "remove_from_whitelist", recent_blockhash);
+        let tx = svm
+            .send_transaction(transaction)
+            .expect("Failed to send init tf hoook tx");
+
+        // Log transaction details
+        msg!("\n\n Remove from whitelist transaction sucessfull");
+        msg!("CUs Consumed: {}", tx.compute_units_consumed);
+        msg!("Tx Signature: {}", tx.signature);
     }
 }
