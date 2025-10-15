@@ -1,3 +1,5 @@
+use std::cell::RefMut;
+
 use anchor_lang::prelude::*;
 use anchor_spl::token_2022::spl_token_2022::extension::transfer_hook::TransferHookAccount;
 use anchor_spl::token_2022::spl_token_2022::extension::{
@@ -60,7 +62,7 @@ impl TransferHook<'_> {
         // Ensure that the source token account has the transfer hook extension enabled
         let source_token_info = self.source_token.to_account_info();
 
-        let mut account_data_ref = source_token_info.try_borrow_mut_data()?;
+        let mut account_data_ref: RefMut< &mut [u8]> = source_token_info.try_borrow_mut_data()?;
 
         let mut account = PodStateWithExtensionsMut::<PodAccount>::unpack(*account_data_ref)?;
 
