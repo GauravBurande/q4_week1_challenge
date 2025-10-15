@@ -47,12 +47,30 @@ pub struct TransferHook<'info> {
 impl TransferHook<'_> {
     /// This function is called when the transfer hook is executed.
     pub fn transfer_hook(&mut self, _amount: u64) -> Result<()> {
+        // Entry log for debugging
+        msg!(
+            "transfer_hook: invoked. source={}, destination={}, owner={}, mint={}, amount={}",
+            self.source_token.key(),
+            self.destination_token.key(),
+            self.owner.key(),
+            self.mint.key(),
+            _amount
+        );
+
         // Fail this instruction if it is not called from within a transfer hook
         self.check_is_transferring()?;
+        msg!("transfer_hook: passed check_is_transferring");
 
         if self.whitelist.address != self.owner.key() {
+            msg!(
+                "transfer_hook: owner {} is not whitelisted (whitelist.address={})",
+                self.owner.key(),
+                self.whitelist.address
+            );
             return err!(WhitelistError::NotWhitelisted);
         }
+
+        msg!("transfer_hook: whitelist check passed for owner {}", self.owner.key());
 
         Ok(())
     }
@@ -62,15 +80,33 @@ impl TransferHook<'_> {
         // Ensure that the source token account has the transfer hook extension enabled
         let source_token_info = self.source_token.to_account_info();
 
-        let mut account_data_ref: RefMut< &mut [u8]> = source_token_info.try_borrow_mut_data()?;
+        msg!("check_is_transferring: source_token_account={}", source_token_info.key());
+
+        let mut account_data_ref: RefMut< &mut [u8]> = match source_token_info.try_borrow_mut_data() {
+            Ok(d) => {
+                msg!("check_is_transferring: borrowed account data, len={}", d.len());
+                d
+            }
+            Err(e) => {
+                msg!("check_is_transferring: failed to borrow account data: {:?}", e);
+                return Err(e.into());
+            }
+        };
 
         let mut account = PodStateWithExtensionsMut::<PodAccount>::unpack(*account_data_ref)?;
+        msg!("check_is_transferring: unpacked PodAccount with extensions");
 
         let account_extension = account.get_extension_mut::<TransferHookAccount>()?;
+        msg!(
+            "check_is_transferring: transfer hook extension transferring={}",
+            bool::from(account_extension.transferring)
+        );
 
         if !bool::from(account_extension.transferring) {
-            panic!("TransferHook: not transferring");
+            msg!("check_is_transferring: NOT transferring - returning NotTransferring error");
+            return err!(crate::error::WhitelistError::NotTransferring);
         }
+        msg!("check_is_transferring: transferring flag set, continuing");
         Ok(())
     }
 }

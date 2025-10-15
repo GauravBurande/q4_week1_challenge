@@ -6,6 +6,8 @@ pub enum WhitelistError {
     NotWhitelisted,
     #[msg("This account is already whitelisted")]
     AlreadyWhitelisted,
+    #[msg("Transfer hook not executing during a transfer")]
+    NotTransferring,
     #[msg("This account is not the admin")]
     NotAdmin,
 }

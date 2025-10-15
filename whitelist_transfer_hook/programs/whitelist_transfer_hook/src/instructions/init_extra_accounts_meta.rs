@@ -24,6 +24,7 @@ pub struct InitializeExtraAccountMetaList<'info> {
 
 impl<'info> InitializeExtraAccountMetaList<'info> {
     pub fn extra_account_metas() -> Result<Vec<ExtraAccountMeta>> {
+        msg!("InitializeExtraAccountMetaList::extra_account_metas: constructing meta list");
         Ok(vec![ExtraAccountMeta::new_with_seeds(
             &[
                 Seed::Literal {
