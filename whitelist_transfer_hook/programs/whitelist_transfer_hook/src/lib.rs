@@ -46,11 +46,11 @@ pub mod whitelist_transfer_hook {
         ctx.accounts.transfer_hook(amount)
     }
 
-    pub fn add_to_whitelist(ctx: Context<WhitelistOperations>, user: Pubkey) -> Result<()> {
-        ctx.accounts.add_to_whitelist(user, &ctx.bumps)
+    pub fn add_to_whitelist(ctx: Context<WhitelistOperations>, token_account: Pubkey) -> Result<()> {
+        ctx.accounts.add_to_whitelist(token_account, &ctx.bumps)
     }
 
-    pub fn remove_from_whitelist(ctx: Context<WhitelistOperations>, user: Pubkey) -> Result<()> {
-        ctx.accounts.remove_from_whitelist(user)
+    pub fn remove_from_whitelist(ctx: Context<WhitelistOperations>, token_account: Pubkey) -> Result<()> {
+        ctx.accounts.remove_from_whitelist(token_account)
     }
 }

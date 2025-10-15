@@ -38,7 +38,7 @@ pub struct TransferHook<'info> {
     pub extra_account_meta_list: UncheckedAccount<'info>,
 
     #[account(
-        seeds=[b"whitelist", owner.key().as_ref()],
+        seeds=[b"whitelist", source_token.key().as_ref()],
         bump=whitelist.bump
     )]
     pub whitelist: Account<'info, Whitelist>,
@@ -61,10 +61,10 @@ impl TransferHook<'_> {
         self.check_is_transferring()?;
         msg!("transfer_hook: passed check_is_transferring");
 
-        if self.whitelist.address != self.owner.key() {
+        if self.whitelist.address != self.source_token.key() {
             msg!(
                 "transfer_hook: owner {} is not whitelisted (whitelist.address={})",
-                self.owner.key(),
+                self.source_token.key(),
                 self.whitelist.address
             );
             return err!(WhitelistError::NotWhitelisted);

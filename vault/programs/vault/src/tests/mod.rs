@@ -191,13 +191,14 @@ mod tests {
 
     fn build_whitelist_transaction(
         admin: &Keypair,
+        token_account: Pubkey,
         operation: &str,
         recent_blockhash: Hash,
     ) -> Transaction {
         let transfer_hook_program = get_tf_hook_program_address();
 
         let whitelist = Pubkey::find_program_address(
-            &[b"whitelist", admin.pubkey().as_ref()],
+            &[b"whitelist", token_account.as_ref()],
             &transfer_hook_program,
         )
         .0;
@@ -213,7 +214,7 @@ mod tests {
         let string = format!("global:{}", operation);
         let discriminator = hash(string.as_bytes());
         data.extend_from_slice(&discriminator.to_bytes()[..8]);
-        data.extend_from_slice(&admin.pubkey().as_ref());
+        data.extend_from_slice(&token_account.as_ref());
 
         let instruction = Instruction {
             program_id: transfer_hook_program,
@@ -240,8 +241,8 @@ mod tests {
         let transfer_hook_program = get_tf_hook_program_address();
         let extra_account_meta_list =
             get_extra_account_metalist_pubkey(&mint2022, transfer_hook_program);
-        let whitelist = Pubkey::find_program_address(
-            &[b"whitelist", admin.pubkey().as_ref()],
+        let user_whitelist = Pubkey::find_program_address(
+            &[b"whitelist", user_ata.as_ref()],
             &transfer_hook_program,
         )
         .0;
@@ -256,7 +257,7 @@ mod tests {
                 vault: vault,
                 mint: mint2022.pubkey(),
                 transfer_hook_program,
-                whitelist,
+                whitelist: user_whitelist,
                 extra_account_meta_list,
                 associated_token_program: ASSOCIATED_TOKEN_PROGRAM,
                 token_program,
@@ -278,6 +279,7 @@ mod tests {
         config: Pubkey,
         vault: Pubkey,
         user_ata: Pubkey,
+        whitelist: Pubkey,
         recent_blockhash: Hash,
     ) -> Transaction {
         let amount_pda =
@@ -285,11 +287,6 @@ mod tests {
         let transfer_hook_program = get_tf_hook_program_address();
         let extra_account_meta_list =
             get_extra_account_metalist_pubkey(&mint2022, transfer_hook_program);
-        let whitelist = Pubkey::find_program_address(
-            &[b"whitelist", admin.pubkey().as_ref()],
-            &transfer_hook_program,
-        )
-        .0;
         let withdraw_ix = Instruction {
             program_id: PROGRAM_ID,
             accounts: crate::accounts::Withdraw {
@@ -306,7 +303,7 @@ mod tests {
                 token_program,
                 system_program: SYSTEM_PROGRAM,
             }
-            .to_account_metas(Some(true)),
+            .to_account_metas(None),
             data: crate::instruction::Withdraw { amount: 100 }.data(),
         };
 
@@ -437,12 +434,12 @@ mod tests {
             mint2022: _,
             token_program: _,
             config: _,
-            vault: _,
+            vault,
             user_ata: _,
         } = setup();
         let recent_blockhash = svm.latest_blockhash();
-
-        let transaction = build_whitelist_transaction(&admin, "add_to_whitelist", recent_blockhash);
+        let transaction =
+            build_whitelist_transaction(&admin, vault, "add_to_whitelist", recent_blockhash);
         let tx = svm
             .send_transaction(transaction)
             .expect("Failed to send init tf hoook tx");
@@ -461,22 +458,22 @@ mod tests {
             mint2022: _,
             token_program: _,
             config: _,
-            vault: _,
+            vault,
             user_ata: _,
         } = setup();
         let recent_blockhash = svm.latest_blockhash();
 
         let transaction1 =
-            build_whitelist_transaction(&admin, "add_to_whitelist", recent_blockhash);
+            build_whitelist_transaction(&admin, vault, "add_to_whitelist", recent_blockhash);
         let _tx1 = svm
             .send_transaction(transaction1)
             .expect("Failed to send init tf hoook tx");
 
         let transaction =
-            build_whitelist_transaction(&admin, "remove_from_whitelist", recent_blockhash);
+            build_whitelist_transaction(&admin, vault, "remove_from_whitelist", recent_blockhash);
         let tx = svm
             .send_transaction(transaction)
-            .expect("Failed to send init tf hoook tx");
+            .expect("Failed to send remove from whitelist tx");
 
         // Log transaction details
         msg!("\n\n Remove from whitelist transaction successful");
@@ -532,11 +529,11 @@ mod tests {
             .expect("Failed to deserialize token account data");
         msg!("token state: {:?}", token_state.base);
 
-        // let transaction4 =
-        //     build_whitelist_transaction(&admin, "add_to_whitelist", recent_blockhash);
-        // let _tx4 = svm
-        //     .send_transaction(transaction4)
-        //     .expect("Failed to send whitelist it txn");
+        let transaction4 =
+            build_whitelist_transaction(&admin, user_ata, "add_to_whitelist", recent_blockhash);
+        let _tx4 = svm
+            .send_transaction(transaction4)
+            .expect("Failed to send whitelist txn");
 
         let transaction = build_deposit_transaction(
             &admin,
@@ -557,84 +554,94 @@ mod tests {
         msg!("Tx Signature: {}", tx.signature);
     }
 
-    // #[test]
-    // fn test_withdraw() {
-    //     let TestEnv {
-    //         mut svm,
-    //         admin,
-    //         mint2022,
-    //         token_program,
-    //         config,
-    //         vault,
-    //         user_ata,
-    //     } = setup();
+    #[test]
+    fn test_withdraw() {
+        let TestEnv {
+            mut svm,
+            admin,
+            mint2022,
+            token_program,
+            config,
+            vault,
+            user_ata,
+        } = setup();
 
-    //     let recent_blockhash = svm.latest_blockhash();
-    //     let transaction1 = build_init_transaction(
-    //         &admin,
-    //         &mint2022,
-    //         token_program,
-    //         config,
-    //         vault,
-    //         recent_blockhash,
-    //     );
-    //     let _tx1 = svm
-    //         .send_transaction(transaction1)
-    //         .expect("Failed to send vault init tx");
+        let recent_blockhash = svm.latest_blockhash();
+        let transfer_hook_program = get_tf_hook_program_address();
+        let vault_whitelist =
+            Pubkey::find_program_address(&[b"whitelist", vault.as_ref()], &transfer_hook_program).0;
+        let transaction1 = build_init_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            config,
+            vault,
+            recent_blockhash,
+        );
+        let _tx1 = svm
+            .send_transaction(transaction1)
+            .expect("Failed to send vault init tx");
 
-    //     let transaction2 = build_init_tf_transaction(&admin, &mint2022, recent_blockhash);
-    //     let _tx2 = svm
-    //         .send_transaction(transaction2)
-    //         .expect("Failed to send init tf hoook tx");
+        let transaction2 = build_init_tf_transaction(&admin, &mint2022, recent_blockhash);
+        let _tx2 = svm
+            .send_transaction(transaction2)
+            .expect("Failed to send init tf hoook tx");
 
-    //     let amount = 1_000_000;
-    //     let transaction3 = build_mint_transaction(
-    //         &admin,
-    //         &mint2022,
-    //         token_program,
-    //         user_ata,
-    //         amount,
-    //         recent_blockhash,
-    //     );
-    //     let _tx3 = svm
-    //         .send_transaction(transaction3)
-    //         .expect("Failed to send mint txn");
+        let amount = 1_000_000;
+        let transaction3 = build_mint_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            user_ata,
+            amount,
+            recent_blockhash,
+        );
+        let _tx3 = svm
+            .send_transaction(transaction3)
+            .expect("Failed to send mint txn");
 
-    //     let transaction4 =
-    //         build_whitelist_transaction(&admin, "add_to_whitelist", recent_blockhash);
-    //     let _tx4 = svm
-    //         .send_transaction(transaction4)
-    //         .expect("Failed to send whitelist it txn");
+        let transaction4 =
+            build_whitelist_transaction(&admin, user_ata, "add_to_whitelist", recent_blockhash);
+        let _tx4 = svm
+            .send_transaction(transaction4)
+            .expect("Failed to send whitelist it txn");
 
-    //     let transaction5 = build_deposit_transaction(
-    //         &admin,
-    //         &mint2022,
-    //         token_program,
-    //         config,
-    //         vault,
-    //         user_ata,
-    //         recent_blockhash,
-    //     );
-    //     let _tx5 = svm
-    //         .send_transaction(transaction5)
-    //         .expect("Failed to send Deposit txn");
+        let transaction5 = build_deposit_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            config,
+            vault,
+            user_ata,
+            recent_blockhash,
+        );
+        let _tx5 = svm
+            .send_transaction(transaction5)
+            .expect("Failed to send Deposit txn");
 
-    //     let transaction = build_withdraw_transaction(
-    //         &admin,
-    //         &mint2022,
-    //         token_program,
-    //         config,
-    //         vault,
-    //         user_ata,
-    //         recent_blockhash,
-    //     );
+        let transaction6 =
+            build_whitelist_transaction(&admin, vault, "add_to_whitelist", recent_blockhash);
+        let _tx6 = svm
+            .send_transaction(transaction6)
+            .expect("Failed to send whitelist it txn");
 
-    //     let tx = svm
-    //         .send_transaction(transaction)
-    //         .expect("Failed to send withdraw txn");
-    //     // Log transaction details
-    //     msg!("\n\n Withdraw transaction successful");
-    //     msg!("CUs Consumed: {}", tx.compute_units_consumed);
-    //     msg!("Tx Signature: {}", tx.signature);
-    // }
+        let transaction = build_withdraw_transaction(
+            &admin,
+            &mint2022,
+            token_program,
+            config,
+            vault,
+            user_ata,
+            vault_whitelist,
+            recent_blockhash,
+        );
+
+        let tx = svm
+            .send_transaction(transaction)
+            .expect("Failed to send withdraw txn");
+        // Log transaction details
+        msg!("\n\n Withdraw transaction successful");
+        msg!("CUs Consumed: {}", tx.compute_units_consumed);
+        msg!("Tx Signature: {}", tx.signature);
+    }
 }

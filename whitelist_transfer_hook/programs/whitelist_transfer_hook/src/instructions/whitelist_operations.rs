@@ -4,7 +4,7 @@ use crate::error::WhitelistError;
 use crate::Whitelist;
 
 #[derive(Accounts)]
-#[instruction(user: Pubkey)]
+#[instruction(token_account: Pubkey)]
 pub struct WhitelistOperations<'info> {
     #[account(
         mut,
@@ -16,7 +16,7 @@ pub struct WhitelistOperations<'info> {
         init_if_needed,
         payer = admin,
         space= 8 + Whitelist::INIT_SPACE,
-        seeds=[b"whitelist", user.key().as_ref()],
+        seeds=[b"whitelist", token_account.key().as_ref()],
         bump
     )]
     pub whitelist: Account<'info, Whitelist>,
@@ -27,22 +27,22 @@ pub struct WhitelistOperations<'info> {
 impl WhitelistOperations<'_> {
     pub fn add_to_whitelist(
         &mut self,
-        user: Pubkey,
+        token_account: Pubkey,
         bumps: &WhitelistOperationsBumps,
     ) -> Result<()> {
-        if self.whitelist.address == user {
+        if self.whitelist.address == token_account {
             return err!(WhitelistError::AlreadyWhitelisted);
         }
 
         self.whitelist.set_inner(Whitelist {
-            address: user,
+            address: token_account,
             bump: bumps.whitelist,
         });
         Ok(())
     }
 
-    pub fn remove_from_whitelist(&mut self, user: Pubkey) -> Result<()> {
-        if self.whitelist.address != user {
+    pub fn remove_from_whitelist(&mut self, token_account: Pubkey) -> Result<()> {
+        if self.whitelist.address != token_account {
             return err!(WhitelistError::AlreadyWhitelisted);
         }
 
