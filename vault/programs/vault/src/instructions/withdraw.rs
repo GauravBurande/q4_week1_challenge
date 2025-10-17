@@ -15,7 +15,7 @@ pub struct Withdraw<'info> {
 
     #[account(
         mut,
-        close=user,
+        // close=user, have a separate ixn for closing this pda
         seeds=[b"amount", user.key().as_ref()],
         bump=amount_pda.bump,
     )]
@@ -81,7 +81,11 @@ impl Withdraw<'_> {
             signer_seeds,
         )?;
 
-        // TODO: deduct the amount withdrawn from the pda
+        self.amount_pda.amount = self
+            .amount_pda
+            .amount
+            .checked_sub(amount)
+            .expect("Incorrect withdraw amount");
         Ok(())
     }
 }
